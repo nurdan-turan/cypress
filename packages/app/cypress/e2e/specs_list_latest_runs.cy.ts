@@ -149,7 +149,7 @@ describe('ACI - Latest runs and Average duration', { viewportWidth: 1200, viewpo
     beforeEach(() => {
       cy.loginUser()
 
-      cy.remoteGraphQLIntercept(async (obj) => {
+      cy.remoteGraphQLInterceptBatched(async (obj) => {
         if (obj.result.data && 'cloudSpecByPath' in obj.result.data) {
           obj.result.data.cloudSpecByPath = {
             __typename: 'CloudProjectSpecNotFound',
