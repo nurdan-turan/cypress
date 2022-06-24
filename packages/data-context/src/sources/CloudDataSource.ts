@@ -51,6 +51,7 @@ export interface CloudExecuteQuery {
 
 export interface CloudExecuteRemote extends CloudExecuteQuery {
   shouldBatch?: boolean
+  fieldName: string
   operationType?: OperationTypeNode
   requestPolicy?: RequestPolicy
   onUpdatedResult?: (data: any) => any
@@ -67,6 +68,12 @@ export interface CloudDataSourceParams {
   fetch: typeof fetch
   getUser(): AuthenticatedUserShape | null
   logout(): void
+  /**
+   * Triggered when we have an initial stale response that is not fulfilled
+   * by an additional fetch to the server. This means we've gotten into a bad state
+   * and we need to clear both the server & client side cache
+   */
+  invalidateClientUrqlCache(): void
 }
 
 /**
@@ -214,8 +221,23 @@ export class CloudDataSource {
       : this.#executeQuery(config.operationDoc, config.operationVariables)
 
     loading = query.then(this.#formatWithErrors)
-    .then((op) => {
+    .then(async (op) => {
       this.#pendingPromises.delete(stableKey)
+
+      // If we have an initial result, by this point we expect that the query should be fully resolved in the cache.
+      // If it's not, it means that we need to clear the cache on the client/server, otherwise it's going to fall into
+      // an infinite loop trying to resolve the stale data. This likely only happens in contrived test cases, but
+      // it's good to handle regardless.
+      if (initialResult) {
+        const eagerResult = this.readFromCache(config)
+
+        if (eagerResult?.stale) {
+          await this.invalidate({ __typename: 'Query' })
+          this.params.invalidateClientUrqlCache()
+
+          return op
+        }
+      }
 
       if (initialResult && !_.isEqual(op.data, initialResult.data)) {
         debug('Different Query Value %j, %j', op.data, initialResult.data)
